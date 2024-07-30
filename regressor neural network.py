@@ -420,8 +420,8 @@ max_error_index = np.argmax(errors)
 worst_prediction_actual = y_test.iloc[max_error_index]
 worst_prediction_predicted = avg_test_preds[max_error_index]
 
-log_output(f'worst prediction - actual value: {worst_prediction_actual}, predicted value: {worst_prediction_predicted}',
-           output_path)
+log_output(f'worst prediction - actual value: {worst_prediction_actual}, predicted value: '
+           f'{worst_prediction_predicted}',output_path)
 
 # examine the features of the worst prediction
 worst_prediction_features = X_test.iloc[max_error_index]

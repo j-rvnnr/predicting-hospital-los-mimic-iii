@@ -1,0 +1,148 @@
+import gc
+import time
+import os
+import datetime
+import pandas as pd
+import numpy as np
+from scipy import stats
+from scipy.stats import spearmanr, kruskal
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# target directory. Set this to wherever the mimic csv files are kept
+target_dir = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked'
+sub_dir = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
+os.chdir(target_dir)
+print(f'Directory set to: {target_dir}')
+
+# setting pandas display options
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 1000)
+
+
+# load csv function again, but this time the subdirectory is always output_files
+def load_csv2(file_name, subdirectory='output_files'):
+    file_path = os.path.join(target_dir, subdirectory, file_name)
+    print(f'loading {file_path}')
+    return pd.read_csv(file_path, low_memory=False)
+
+
+# function to create directory if it doesn't exist
+def create_directory(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    return directory
+
+
+# making and setting the output directory for the plots
+plot_dir = create_directory('data_exploration')
+out_dir = os.path.join(sub_dir, plot_dir)
+print(f'Output directory: {out_dir}')
+create_directory(out_dir)
+
+df_ref = load_csv2('000_reference_data.csv')
+df_core = load_csv2('001_core_data.csv')
+
+df_admissions = load_csv2('111_admissions.csv')
+df_admissions = df_admissions[df_admissions['HADM_ID'].isin(df_core['HADM_ID'])]
+
+print(df_admissions.head())
+
+# smooth histogram plot function
+def smooth_histogram_plot(df, column, output_dir, palette='Blues'):
+    plt.figure(figsize=(12, 8))
+    sns.kdeplot(df[column], fill=True)
+    plt.title(f'Distribution of {column}')
+    plt.xlabel(column)
+    plt.ylabel('Density')
+
+    # ensure the directory exists
+    create_directory(output_dir)
+
+    # save the plot
+    plot_path = os.path.join(output_dir, f'kde_{column}.png')
+    plt.savefig(plot_path)
+    print(f'Plot saved to {plot_path}')
+
+    # show the plot
+    plt.show()
+    plt.close()
+
+
+# box whisker plot function
+def box_whisker_plot(df, column, output_dir, palette='Blues', order=None):
+    # if no order is specified, rank by median value
+    if order is None:
+        order = df.groupby(column)['los_hours'].median().sort_values().index.tolist()
+
+    # ensure order only contains values present in the column
+    order = [val for val in order if val in df[column].unique()]
+
+    plt.figure(figsize=(12, 8))
+
+    # this line throws a deprecation warning, but I can't figure out how to make it work 'correctly' so it's just going
+    # to have to stay there for now
+    sns.boxplot(x='los_hours', y=column, data=df, order=order, showfliers=False)
+
+    plt.title(f'Box Whisker Plot of {column} vs. LOS Hours')
+    plt.xlabel('LOS Hours')
+    plt.ylabel(column)
+    plt.xticks(rotation=45)
+
+    # ensure the directory exists
+    create_directory(output_dir)
+
+    # save the plot
+    plot_path = os.path.join(output_dir, f'box_whisker_{column}.png')
+    plt.savefig(plot_path)
+    print(f'Plot saved to {plot_path}')
+
+    # show the plot
+    plt.show()
+    plt.close()
+
+
+def histogram_plot_los_days(df, column, output_dir, bin_width=24):
+
+    df['los_days'] = df[column] / bin_width
+
+    # calculate buns
+    max_days = np.ceil(df['los_days'].max())
+    bins = int(max_days)
+
+    plt.figure(figsize=(12, 8))
+    sns.histplot(df['los_days'], bins=bins, kde=False)
+    plt.title(f'Histogram of {column} (binned by day)')
+    plt.xlabel('LOS Days')
+    plt.ylabel('Frequency')
+    plt.xticks(np.arange(0, max_days + 1, 1))  # Ensure ticks for each day
+
+    # ensure the directory exists
+    create_directory(output_dir)
+
+    # save the plot
+    plot_path = os.path.join(output_dir, f'histogram_{column}_by_day.png')
+    plt.savefig(plot_path)
+    print(f'Plot saved to {plot_path}')
+
+    # show the plot
+    plt.show()
+    plt.close()
+
+
+
+age_range_order = ['16-18', '19-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90+']
+
+
+histogram_plot_los_days(df_admissions, 'los_hours', out_dir)
+smooth_histogram_plot(df_admissions, 'los_hours', out_dir)
+
+box_whisker_plot(df_admissions, 'age_range', out_dir, order=age_range_order)
+box_whisker_plot(df_admissions, 'GENDER', out_dir)
+box_whisker_plot(df_admissions, 'religion_group', out_dir)
+box_whisker_plot(df_admissions, 'insurance_type', out_dir)
+
+box_whisker_plot(df_admissions, 'marital_status_group', out_dir)
+
+
