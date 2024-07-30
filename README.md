@@ -13,3 +13,13 @@ This project is my masters thesis project for my Data Science postgrad at the Un
 The mimic -III dataset is a popular dataset for studies on hospital patients as it's large, broad, and freely accessible (mostly). There are a large number of different tables, which include numerous datapoints from all across the hospital. We will be using and selecting a wide variety of these data to use in our experimentation,
 and hopefully produce a lean, fast and effective machine learning model which will be able to somewhat accurately predict an  unseen patients los.
 
+The plan is to use a 2 stage machine learning approach, first to identify outliers within the data, then to predict the length of stay of patients within those groups. (outliers and non-outliers)
+
+## 1.3: How?
+
+This overview serves as a brief plan on how I wish to carry out the process. Much of this is constructed from notes taken during the undertaking of the project, although it is compiled once the majority of the project work is complete. 
+
+The process can be split into 3 easy sections. 
+- data exploration
+- feature engineering
+- machine learning
