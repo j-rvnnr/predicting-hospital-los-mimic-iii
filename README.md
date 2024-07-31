@@ -1,31 +1,21 @@
-# Predict-Hospital-LOS
-Predicting the Length of Stay of hospital patients using the MIMIC- III Dataset.
+# Results
+## Classifier Results
+The classifier model is designed as a preliminary estimator for the regression model. We want to predict the 'Stay class' of each patient, as certain stay classes have better prediction outcomes from the regressor. The stay classes we chose were Short stay (< 7 days in hospital), Medium stay (7-21 days in hospital) and Long stay (21+ days in hospital). Although these selections seem arbitrary, there is no accepted definition for a short, medium, or long stay in hospital, therefore I have chosen the categories for this in a way that serves my model and data the best. In the following plots, Short stay is class 0, Medium stay is class 1 and long stay is class 2. The visualisation of the classifier results only takes the final pair's outcome, however, the predictions are applied and cross validated across the entire dataset. 
 
-# 0: Overview
-## 0.1: Why?
+### Visualising Class Predictions
 
-It's important to predict hospital length of stay (LOS, los) for a number of reasons, such as improving patient flow, Increasing healthcare efficiency (both inpatient and outpatient), saving money in the hospital system, and improving outcomes for patients.
 
-This project is my masters thesis project for my Data Science postgrad at the University of Aberdeen. This is not the thesis itself, but instead supplementary information. I will try to keep a degree of professionalism here, but this file explaining is likely to be significantly more casual than any academic writing I do on the topic.
+![confusion_matrix_abs_classifier-0731-1106](https://github.com/user-attachments/assets/2e25c041-e4c6-47bf-9097-5c4ee6cbbbc0)
 
-## 0.2: What?
+This is the confusion matrix of the absolute values predicted by the classifier model. It can be seen here, that the classes are heavily imbalanced, with class 0 being the largest part of the test set, but also the most accurately predicted class. Class 2 on the other hand, appears to be worst predicted class. There is an overlap between class 1 and class 2. 
 
-The mimic -III dataset is a popular dataset for studies on hospital patients as it's large, broad, and freely accessible (mostly). There are a large number of different tables, which include numerous datapoints from all across the hospital. We will be using and selecting a wide variety of these data to use in our experimentation,
-and hopefully produce a lean, fast and effective machine learning model which will be able to somewhat accurately predict an  unseen patients los.
+![confusion_matrix_percentage_classifier-0731-1106](https://github.com/user-attachments/assets/675beef8-b99d-42f5-b1cb-54027ab7566b)
 
-The plan is to use a 2 stage machine learning approach, first to identify outliers within the data, then to predict the length of stay of patients within those groups. (outliers and non-outliers)
+In order to determine specifically which class is the most accurately predicted, this plot is also shown with the values represented as percentages. Class 0 is accurately predicted with 92.5% accuracy, class 1 with 86.6% accuracy and class 2 with 75.1% accuracy. We will use these results, to create a 'predicted class' variable within the data, which will be passed on to the regression model, to hopefully improve the prediction of that model. We can also filter the data to consist only of certain classes, potentially improving the model's predictive power further.
 
-## 0.3: How?
+![model_loss_classifier-0731-1106](https://github.com/user-attachments/assets/6566e6c0-130c-4ef7-8589-88538c9a27b7)
 
-This overview serves as a brief plan on how I wish to carry out the process. Much of this is constructed from notes taken during the undertaking of the project, although it is compiled once the majority of the project work is complete. 
+The loss for the classifier shows that it stabilises quickly and remains stable throughout the training process. 
 
-The process can be split into 3 easy sections. 
-- data exploration
-- feature engineering
-- machine learning
-
-below, I will describe how I completed each of these steps, in the form of an article/report about the project. 
-
-## 0.4: Insights
-
-This is the first project of this scope I have undertaken, and as a result, it was a bit sloppy. The project was also not what I expected coming in. Before starting, I expected this project to be 75% machine learning, however once I learned how simple it was to set up a neural network in python with Keras/Tensorflow, I realised that this project was actually mostly about data management and filtering and feature engineering. This didn't dtract from the project at all, and instead, made it rather fun, if I do say so! 
+## Regression Results
+The regression model takes the same data provided to the classification model, as well as the results of the classifier. The predictions of the regressor varies widely depending on which class is targeted for the regression. 
