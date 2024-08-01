@@ -41,16 +41,34 @@ out_dir = os.path.join(sub_dir, plot_dir)
 print(f'Output directory: {out_dir}')
 create_directory(out_dir)
 
+# load in some data
 df_ref = load_csv2('000_reference_data.csv')
 df_core = load_csv2('001_core_data.csv')
 
 df_admissions = load_csv2('111_admissions.csv')
-df_admissions = df_admissions[df_admissions['HADM_ID'].isin(df_core['HADM_ID'])]
+df_admissions_c = df_admissions[df_admissions['HADM_ID'].isin(df_core['HADM_ID'])]
+
+df_icustays = load_csv2('103_icu_stays.csv')
+df_iecv = load_csv2('202_iecv.csv')
+df_iemv = load_csv2('203_iemv.csv')
+
+df_icd9d = load_csv2('302_icd9d.csv')
+
+df_prescriptions = load_csv2('306_prescriptions.csv')
+df_procedures = load_csv2('307_procedures.csv')
 
 print(df_admissions.head())
+print(df_icustays.head())
+
+print(df_iemv.head())
+
+print(df_icd9d.head())
+print(df_prescriptions.head())
+print(df_procedures.head())
+
 
 # smooth histogram plot function
-def smooth_histogram_plot(df, column, output_dir, palette='Blues'):
+def smooth_histogram_plot(df, column, output_dir):
     plt.figure(figsize=(12, 8))
     sns.kdeplot(df[column], fill=True)
     plt.title(f'Distribution of {column}')
@@ -69,9 +87,8 @@ def smooth_histogram_plot(df, column, output_dir, palette='Blues'):
     plt.show()
     plt.close()
 
-
 # box whisker plot function
-def box_whisker_plot(df, column, output_dir, palette='Blues', order=None):
+def box_whisker_plot(df, column, output_dir, order=None):
     # if no order is specified, rank by median value
     if order is None:
         order = df.groupby(column)['los_hours'].median().sort_values().index.tolist()
@@ -102,8 +119,8 @@ def box_whisker_plot(df, column, output_dir, palette='Blues', order=None):
     plt.show()
     plt.close()
 
-
-def histogram_plot_los_days(df, column, output_dir, bin_width=24):
+# histogram, specifically binned by days
+def histogram_plot_days(df, column, output_dir, bin_width=24):
 
     df['los_days'] = df[column] / bin_width
 
@@ -130,19 +147,48 @@ def histogram_plot_los_days(df, column, output_dir, bin_width=24):
     plt.show()
     plt.close()
 
+# scatter plot function
+def scatter_plot(df, column, output_dir):
+    plt.figure(figsize=(12, 8))
+
+    # create scatter plot
+    plt.scatter(df['los_hours'], df[column], alpha=0.5)
+
+    plt.title(f'Scatter Plot of {column} vs. LOS Hours')
+    plt.xlabel('LOS Hours')
+    plt.ylabel(column)
+    plt.xticks(rotation=45)
+
+    # directory catch
+    create_directory(output_dir)
+
+    # save the plot
+    plot_path = os.path.join(output_dir, f'scatter_plot_{column}.png')
+    plt.savefig(plot_path)
+    print(f'Plot saved to {plot_path}')
+
+    # show the plot
+    plt.show()
+    plt.close()
+
 
 
 age_range_order = ['16-18', '19-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90+']
 
 
-histogram_plot_los_days(df_admissions, 'los_hours', out_dir)
-smooth_histogram_plot(df_admissions, 'los_hours', out_dir)
+histogram_plot_days(df_admissions_c, 'los_hours', out_dir)
+# smooth_histogram_plot(df_admissions_c, 'los_hours', out_dir)
 
-box_whisker_plot(df_admissions, 'age_range', out_dir, order=age_range_order)
-box_whisker_plot(df_admissions, 'GENDER', out_dir)
-box_whisker_plot(df_admissions, 'religion_group', out_dir)
-box_whisker_plot(df_admissions, 'insurance_type', out_dir)
+# box_whisker_plot(df_admissions_c, 'age_range', out_dir, order=age_range_order)
+# box_whisker_plot(df_admissions_c, 'GENDER', out_dir)
+# box_whisker_plot(df_admissions_c, 'religion_group', out_dir)
+# box_whisker_plot(df_admissions_c, 'insurance_type', out_dir)
 
-box_whisker_plot(df_admissions, 'marital_status_group', out_dir)
+# box_whisker_plot(df_admissions_c, 'marital_status_group', out_dir)
 
+box_whisker_plot(df_icustays, 'FIRST_CAREUNIT', out_dir)
 
+box_whisker_plot(df_icd9d, 'diagnosis_category', out_dir)
+
+scatter_plot(df_iemv, 'PATIENTWEIGHT', out_dir)
+scatter_plot(df_icustays, 'icu_los', out_dir)

@@ -38,8 +38,8 @@ import tensorflow as tf
 
 # these variables are for data handling, whether we wish to include the longstay, only look at the longstay, and
 # whether we want to include categorical data.
-exclude_longstay = 1
-only_longstay = 0
+pred_class_list = [0, 1, 2]
+class_list_str = '_'.join(map(str, pred_class_list))
 num_only = 1
 
 # these are hyperparameters for the neural network, including runtime, learningrate, batch size and the train/test
@@ -54,7 +54,7 @@ earlystopping_start = 200
 earlystopping_patience = 50
 
 # total time limit (seconds)[36000 is 10 hours]
-total_time_limit = 36000
+total_time_limit = 3600/48
 
 # neural network parameters
 max_layersize = 512
@@ -66,6 +66,10 @@ dropout = 0.4
 xval_kfolds = 2
 random_state = 117
 top_n = 50
+
+# colour plotting I think
+default_palette = sns.color_palette()
+colors = {0: default_palette[1], 1: default_palette[0], 2: default_palette[2]}
 
 
 ####################################################################################################
@@ -132,8 +136,7 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
     model.add(Input(shape=(input_dim,)))
 
     # layer 1. contains dense, regularisation, batch normalisation, relu (random or parametric) and dropout
-    model.add(Dense(int(max_layersize), input_dim=input_dim, activation='relu',
-                    kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(BatchNormalization())
     model.add(PReLU())
     model.add(Dropout(dropout))
@@ -195,17 +198,11 @@ out_dir = create_directory('output_files')
 # start the script timer
 start_time = time.time()
 
-# catch this potential error before it can cause havoc further down
-if exclude_longstay == 1 and only_longstay == 1:
-    only_longstay = 0
-    print('exclude_longstay and only_longstay both set to 1. Setting only_longstay to 0 to prevent error')
-
-
 # get the file name for output by adding regressor for regressor model and the current time
 current_time = f'regressor_{time.strftime("%Y%m%d-%H%M%S")}'
 
 # defining the file paths for the input data
-target_file = '901_full_data_preddata72_5.csv'
+target_file = '902_full_data_pred_72_5.csv'
 target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
 core_test_file_path = os.path.join(target_directory, target_file)
 log_dir = os.path.dirname(core_test_file_path)
@@ -218,15 +215,13 @@ create_directory(plot_dir)
 log_output('loading core data', output_path)
 core_data = pd.read_csv(core_test_file_path, low_memory=False)
 
-# exclude rows where stay class = 2 if we choose to exclude long stay patients. it results in more accuracy for the
-# other classes
-if exclude_longstay == 1:
-    core_data = core_data[core_data['stay_class'] != 2]
 
-# if only_longstay = 1 then we filter out to be only the longstay, this is for experimental purposes, the longstay
-# patients are much harder to predict
-if only_longstay == 1 and exclude_longstay == 0:
-    core_data = core_data[core_data['stay_class'] == 2]
+# filtering the pred_stay_class so that we can specifically target individual classes.
+
+core_data = core_data[core_data['pred_stay_class'].isin(pred_class_list)]
+
+
+
 
 # check for nan values in core_data
 if core_data.isna().any().any():
@@ -234,7 +229,7 @@ if core_data.isna().any().any():
     core_data.fillna(core_data.mean(), inplace=True)
 
 # exclude los_hours and preserve hadm hours for later use (validation)
-features = core_data.drop(columns=['los_hours', 'los_days_x', 'los_days_y', 'stay_class'])
+features = core_data.drop(columns=['los_hours', 'los_days', 'stay_class'])
 target = core_data['los_hours'] # set target variable
 hadm_ids = features['HADM_ID'] # save the hopsital_admission id's
 features = features.drop(columns=['HADM_ID']) # load in the features we wish to examine
@@ -321,6 +316,8 @@ kf = KFold(n_splits=xval_kfolds, shuffle=True, random_state=random_state)
 fold = 1
 all_test_preds = []
 
+training_start_time = time.time()  # Record the start time of the training process
+
 for train_index, val_index in kf.split(X_train_preprocessed):
     log_output(f'\nTraining fold {fold}', output_path)
 
@@ -335,6 +332,12 @@ for train_index, val_index in kf.split(X_train_preprocessed):
     all_test_preds.append(fold_test_preds)
 
     fold += 1
+
+training_end_time = time.time()
+
+# calculate average time per epoch
+total_training_time = training_end_time - training_start_time
+average_time_per_epoch = total_training_time / (epochs * xval_kfolds)
 
 # average the predictions from all folds
 avg_test_preds = np.mean(all_test_preds, axis=0).flatten()
@@ -354,7 +357,7 @@ log_output(f'test r2: {test_r2}', output_path)
 log_output(f'test mae: {test_mae}', output_path)
 
 # save the model
-model_filename = f'model_{current_time}_r2_{test_r2:.3f}.keras'
+model_filename = f'model_{current_time}_r2_{test_r2:.3f}_{class_list_str}.keras'
 model.save(os.path.join(log_dir, model_filename))
 log_output(f'model saved to {model_filename}', output_path)
 
@@ -379,7 +382,7 @@ try:
     plt.xlabel('epoch')
     plt.ylabel('loss')
     plt.legend(['training loss', 'validation loss'], loc='upper right')
-    loss_plot_path = os.path.join(plot_dir, f'model_loss_{current_time}.png')
+    loss_plot_path = os.path.join(plot_dir, f'model_loss_{current_time}_{class_list_str}.png')
     plt.savefig(loss_plot_path)
     log_output(f'loss plot saved to {loss_plot_path}', output_path)
 except Exception as e:
@@ -388,12 +391,13 @@ except Exception as e:
 # scatter plot of predicted vs actual LOS
 try:
     plt.figure()
-    plt.scatter(y_test, avg_test_preds, alpha=0.5)
-    plt.title('predicted vs actual los')
-    plt.xlabel('actual los')
-    plt.ylabel('predicted los')
+    pred_stay_class_test = core_data.loc[y_test.index, 'pred_stay_class']
+    plt.scatter(y_test, avg_test_preds, alpha=0.5, c=pred_stay_class_test.map(colors))
+    plt.title('Predicted vs Actual LOS')
+    plt.xlabel('Actual LOS')
+    plt.ylabel('Predicted LOS')
     plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)
-    scatter_plot_path = os.path.join(plot_dir, f'predicted_vs_actual_{current_time}.png')
+    scatter_plot_path = os.path.join(plot_dir, f'predicted_vs_actual_{current_time}_{class_list_str}.png')
     plt.savefig(scatter_plot_path)
     log_output(f'scatter plot saved to {scatter_plot_path}', output_path)
 except Exception as e:
@@ -408,11 +412,16 @@ try:
     plt.xlabel('Actual LOS')
     plt.ylabel('Residuals')
     plt.title('Residual Plot')
-    residual_plot_path = os.path.join(plot_dir, f'residual_plot_{current_time}.png')
+    residual_plot_path = os.path.join(plot_dir, f'residual_plot_{current_time}_{class_list_str}.png')
     plt.savefig(residual_plot_path)
     log_output(f'residual plot saved to {residual_plot_path}', output_path)
 except Exception as e:
     log_output(f'error plotting residuals: {e}', output_path)
+
+
+'''
+step 5 finding the worst prediction, and determining which features are the most important.
+'''
 
 # identify the worst prediction
 errors = np.abs(y_test - avg_test_preds)
@@ -443,11 +452,41 @@ log_output(f'Top {top_n} feature importances:', output_path)
 for i in range(top_n):
     log_output(f'{i + 1}. feature {top_feature_names[i]} ({top_importances[i]})', output_path)
 
+'''
+step ??? 6 i think: summary of results
+'''
+
+# generate and save a summary table
+summary_file_path = os.path.join(log_dir, f'summary_{current_time}.txt')
+with open(summary_file_path, 'w', encoding='utf-8') as f:
+    f.write(f'Target file name: {target_file}\n')
+    f.write(f'Hyperparameters:\n')
+    f.write(f' - epochs: {epochs}\n')
+    f.write(f' - learning rate: {learningrate}\n')
+    f.write(f' - batch size: {batchsize}\n')
+    f.write(f' - test size: {testsize}\n')
+    f.write(f' - early stopping start: {earlystopping_start}\n')
+    f.write(f' - early stopping patience: {earlystopping_patience}\n')
+    f.write(f' - total time limit: {total_time_limit}\n')
+    f.write(f' - max layer size: {max_layersize}\n')
+    f.write(f' - l1 regularization: {l1reg}\n')
+    f.write(f' - l2 regularization: {l2reg}\n')
+    f.write(f' - dropout: {dropout}\n')
+    f.write(f' - average time per epoch: {average_time_per_epoch:.4f} seconds\n')
+
+    f.write(f'Results:\n')
+    f.write(f' - Total MAE: {test_mae:.4f}\n')
+    f.write(f' - R2: {test_r2:.4f}\n')
+
+
+log_output(f'Summary saved to {summary_file_path}', output_path)
+
+
 
 # calculate and print the execution time
 end_time = time.time()
 elapsed_time = end_time - start_time
 hours, rem = divmod(elapsed_time, 3600)
 minutes, seconds = divmod(rem, 60)
-log_output(f"Script took {elapsed_time:.2f} seconds to execute.", output_path)
-log_output(f"That's {int(hours)}:{int(minutes)}:{int(seconds)} (hh:mm:ss).", output_path)
+log_output(f'Script took {elapsed_time:.2f} seconds to execute.', output_path)
+log_output(f'That\'s {int(hours)}:{int(minutes)}:{int(seconds)} (hh:mm:ss).', output_path)

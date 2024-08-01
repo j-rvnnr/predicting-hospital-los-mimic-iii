@@ -37,9 +37,9 @@ target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-da
 section_name = ''
 
 # ranges for parameters
-num_entries = [5]
+num_entries = [10, 15, 20]
 time_window = [72]
-max_cat = [20]
+max_cat = [2]
 completeness_threshold = 80
 
 exp_exceptions = ['los_hours']
@@ -2686,13 +2686,13 @@ for tw in time_window:
 
         # do mode imputation on columns with completeness above the threshold
         mode_imputer = SimpleImputer(strategy='most_frequent')
-        for col in completeness_df[completeness_df['Completeness (%)'] >= completeness_threshold]['column']:
+        for col in completeness_df[completeness_df['Completeness (%)'] >= completeness_threshold]['Column']:
             print(f'Applying mode imputation to column: {col}')
             combined_df[col] = mode_imputer.fit_transform(combined_df[[col]]).ravel()
 
         # then fixed value imputation to columns with completeness below the threshold
         fixed_value_imputer = SimpleImputer(strategy='constant', fill_value='none')
-        for col in completeness_df[completeness_df['Completeness (%)'] < completeness_threshold]['column']:
+        for col in completeness_df[completeness_df['Completeness (%)'] < completeness_threshold]['Column']:
             if combined_df[col].dtype == 'object':
                 print(f'Applying fixed value imputation to column: {col}')
                 combined_df[col] = fixed_value_imputer.fit_transform(combined_df[[col]]).ravel()

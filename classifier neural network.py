@@ -5,7 +5,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc, \
+    precision_recall_curve, average_precision_score
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -22,9 +24,20 @@ from tensorflow.keras.optimizers import AdamW
 '''
 initialise variables
 '''
+# setting pandas display options
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 1000)
+
 
 # set the num_only parameter
 num_only = 1
+calc_feature_import = 0
+
+# define our file paths
+target_hours = 72
+target_entries = 5
+target_catlimit = 20
 
 # these are hyperparameters for the neural network, including runtime, learningrate, batch size and the train/test
 # split size.
@@ -38,10 +51,10 @@ earlystopping_start = 200
 earlystopping_patience = 50
 
 # total time limit (seconds)[3600 is 1 hour]
-total_time_limit = 3600*2
+total_time_limit = 3600/6
 
 # neural network parameters
-max_layersize = 512
+max_layersize = 512/16
 l1reg = 0.001
 l2reg = 0.001
 dropout = 0.5
@@ -143,6 +156,14 @@ def classify_stay(los_hours):
     else:
         return 2
 
+# function to determine which class is closest for the predictor results
+def closest_class(mode, mean, median):
+    classes = np.array([0, 1, 2])
+    combined = np.array([mode, mean, median])
+    closest = np.round(np.mean(combined)).astype(int)
+    return np.clip(closest, classes.min(), classes.max())
+
+
 '''
 step 1 run script and preprocess data
 '''
@@ -153,11 +174,10 @@ start_time = time.time()
 # get the file name for output by adding classifier for classification model and the current time
 current_time = f'classifier-{time.strftime('%m%d-%H%M')}'
 
-# define our file paths
-target_hours = 72
-target_entries = 5
-target_catlimit = 20
-target_file = f'901_cleaned_combined_data{target_hours}_{target_entries}_20.csv'
+
+
+
+target_file = f'901_cleaned_combined_data{target_hours}_{target_entries}_{target_catlimit}.csv'
 target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
 core_test_file_path = os.path.join(target_directory, target_file)
 log_dir = os.path.dirname(core_test_file_path)
@@ -180,7 +200,8 @@ skf = StratifiedKFold(n_splits=8, shuffle=True, random_state=random_state)
 for i, (_, test_index) in enumerate(skf.split(core_data, core_data['stay_class'])):
     core_data.loc[test_index, 'class_index'] = i + 1
 
-# creating the pairs for the test/train sets keeping them to mostly unique pairs
+# creating the pairs for the test/train sets keeping them to mostly unique pairs. this is a form of cross validation,
+# and also ensures that the final dataset is not influenced by other runs of the model
 test_set_pairs_1 = [(1, 2), (3, 4), (5, 6), (7, 8)]
 test_set_pairs_2 = [(1, 3), (2, 5), (4, 7), (6, 8)]
 test_set_pairs_3 = [(1, 4), (2, 6), (3, 8), (5, 7)]
@@ -188,8 +209,10 @@ test_set_pairs_4 = [(1, 5), (2, 7), (3, 6), (4, 8)]
 test_set_pairs_5 = [(1, 6), (2, 8), (3, 7), (4, 5)]
 test_set_pairs_6 = [(1, 7), (2, 4), (3, 5), (6, 8)]
 
-all_test_set_pairs = [test_set_pairs_1, test_set_pairs_2, test_set_pairs_3,
-                      test_set_pairs_4, test_set_pairs_5, test_set_pairs_6]
+all_test_set_pairs = [test_set_pairs_1, test_set_pairs_3, test_set_pairs_5, test_set_pairs_4]
+
+#all_test_set_pairs = [test_set_pairs_1, test_set_pairs_2, test_set_pairs_3,
+#                     test_set_pairs_4, test_set_pairs_5, test_set_pairs_6]
 
 # prepare dataframe to store predictions
 pred_values = core_data[['HADM_ID', 'los_hours', 'stay_class', 'los_days']].copy()
@@ -197,6 +220,7 @@ pred_values = core_data[['HADM_ID', 'los_hours', 'stay_class', 'los_days']].copy
 # defining the pre-process pipeline
 numeric_features = core_data.select_dtypes(include=[np.number]).columns.tolist()
 numeric_features = [col for col in numeric_features if col not in exceptions + ['HADM_ID', 'class_index']]
+
 categorical_features = core_data.select_dtypes(include=[object]).columns.tolist()
 categorical_features = [col for col in categorical_features if col not in ['HADM_ID', 'class_index', 'stay_class']]
 
@@ -243,7 +267,8 @@ for set_num, test_set_pairs in enumerate(all_test_set_pairs, 1):
 
     # looping through the pairs within the sets
     for pair_num, (test_set_1, test_set_2) in enumerate(test_set_pairs, 1):
-        log_output(f'Processing pair {pair_num} in set {set_num}: test sets {test_set_1} and {test_set_2}', output_path)
+        log_output(f'Processing pair {pair_num} in set {set_num}: test sets {test_set_1} and {test_set_2}',
+                   output_path)
 
         train_data = core_data[~core_data['class_index'].isin([test_set_1, test_set_2])]
         test_data = core_data[core_data['class_index'].isin([test_set_1, test_set_2])]
@@ -282,8 +307,6 @@ for set_num, test_set_pairs in enumerate(all_test_set_pairs, 1):
 '''
 step 3 making the file
 '''
-
-
 # sort the prediction values by HADM_ID to undo any shuffling
 pred_values = pred_values.sort_values(by='HADM_ID')
 
@@ -293,8 +316,8 @@ df = pred_values
 # keep the HADM_ID, stay_class, and los_hours columns
 df_transformed = df.copy()
 
-# calculate mean, median, and mode pred_class for each row
-pred_class_cols = [col for col in df.columns if 'pred_class_set_' in col]
+# calculate mean, median, and mode pred class for each row
+pred_class_cols = [col for col in df.columns if col.startswith('pred_value_set_')]
 df_transformed['mean_pred_class'] = df[pred_class_cols].mean(axis=1)
 df_transformed['median_pred_class'] = df[pred_class_cols].median(axis=1)
 
@@ -306,22 +329,23 @@ except IndexError:
 
 # calculate mean pred_value for all sets for each class
 for i in range(3):
-    pred_value_cols = [col for col in df.columns if f'pred_value_set_' in col and f'class_{i}' in col]
-    df_transformed[f'mean_pred_value_class_{i}'] = df[pred_value_cols].mean(axis=1)
+    pred_value_cols = [col for col in df.columns if col.startswith(f'pred_value_set_')]
+    df_transformed[f'mean_pred_value_class_{i}'] = df_transformed[pred_value_cols].mean(axis=1)
 
 # calculate cumulative pred_value for all sets for each class
 for i in range(3):
-    pred_value_cols = [col for col in df.columns if f'pred_value_set_' in col and f'class_{i}' in col]
-    df_transformed[f'cumulative_pred_value_class_{i}'] = df[pred_value_cols].sum(axis=1)
+    pred_value_cols = [col for col in df.columns if col.startswith(f'pred_value_set_')]
+    df_transformed[f'cumulative_pred_value_class_{i}'] = df_transformed[pred_value_cols].sum(axis=1)
 
-# drop all the original columns
-df_transformed = df_transformed.dropna(axis=1, how='all')
-print(df_transformed.head(10))
+# create the pred_stay_class column
+df_transformed['pred_stay_class'] = df_transformed.apply(
+    lambda row: closest_class(row['mode_pred_class'], row['mean_pred_class'], row['median_pred_class']),
+    axis=1
+)
+stay_class_idx = df_transformed.columns.get_loc('stay_class')
+df_transformed.insert(stay_class_idx + 1, 'pred_stay_class', df_transformed.pop('pred_stay_class'))
 
-
-# extract the relevant part of target_file2 for the output file name ( does not work properly)
-file_parts = target_file.split('_')
-relevant_part = '_'.join(file_parts[3:5])
+print(df_transformed.head(5))
 
 # load the original DataFrame to merge with
 original_df = pd.read_csv(core_test_file_path)
@@ -330,23 +354,86 @@ original_df = pd.read_csv(core_test_file_path)
 merged_df = pd.merge(original_df, df_transformed.drop(columns=['los_hours', 'los_days']),
                      on=['HADM_ID', 'stay_class'], how='outer')
 
-print(merged_df.head(10))
+columns_order = ['HADM_ID', 'stay_class', 'pred_stay_class'] + \
+                [col for col in merged_df.columns if col not in ['HADM_ID', 'stay_class', 'pred_stay_class']]
+merged_df = merged_df[columns_order]
+# ok this is a bit messy but it works
+
+'''
+Feature importance section
+'''
+
+# identify the worst prediction
+errors = np.abs(y_test - test_preds)
+max_error_index = np.argmax(errors)
+worst_prediction_actual = y_test.iloc[max_error_index]
+worst_prediction_predicted = test_preds[max_error_index]
+
+log_output(f'worst prediction - actual value: {worst_prediction_actual}, predicted value: '
+           f'{worst_prediction_predicted}', output_path)
+
+# find the features of the worst prediction
+worst_prediction_features = X_test.iloc[max_error_index]
+log_output(f'features of the worst prediction: {worst_prediction_features.to_dict()}', output_path)
+
+if calc_feature_import == 1:
+    # feature importance (gradient boosting classifier)
+    log_output('computing feature importance using Gradient Boosting Classifier', output_path)
+
+    try:
+        gbr = GradientBoostingClassifier()
+        gbr.fit(X_train_preprocessed, y_train)
+
+        importances = gbr.feature_importances_
+        indices = np.argsort(importances)[::-1]
+
+        # find and log top n feature importances
+        top_indices = indices[:top_n]
+        top_importances = importances[top_indices]
+        top_feature_names = preprocessor.get_feature_names_out()[top_indices]
+        log_output(f'Top {top_n} feature importances:', output_path)
+        for i in range(top_n):
+            log_output(f'{i + 1}. feature {top_feature_names[i]} ({top_importances[i]})', output_path)
+
+        # plot top feature importances
+        try:
+            plt.figure(figsize=(12, 8))
+            sns.barplot(x=top_importances, y=top_feature_names)
+            plt.title(f'Top {top_n} Feature Importances')
+            plt.xlabel('Importance')
+            plt.ylabel('Feature')
+
+            feature_importance_path = os.path.join(plot_dir, f'feature_importance_{current_time}.png')
+            plt.savefig(feature_importance_path)
+            log_output(f'feature importance plot saved to {feature_importance_path}', output_path)
+
+            plt.show()
+            plt.close()
+        except Exception as e:
+            log_output(f'error plotting feature importance: {e}', output_path)
+
+    except Exception as e:
+        log_output(f'Error during feature importance calculation: {e}', output_path)
+else:
+    log_output('Feature importance calculation is skipped.', output_path)
 
 
-
-
+'''
+step 4 plotting the information
+'''
 
 # plot training & validation loss values
 try:
     plt.figure()
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
-    plt.title('model loss')
+    plt.title(f'model loss for {target_hours} hours after admission and {target_entries} entries')
     plt.xlabel('epoch')
     plt.ylabel('loss')
     plt.legend(['training loss', 'validation loss'], loc='upper right')
+
     loss_plot_path = os.path.join(plot_dir, f'model_loss_{current_time}.png')
-    create_directory(os.path.dirname(loss_plot_path))  # Ensure the directory exists
+    create_directory(os.path.dirname(loss_plot_path))
     plt.savefig(loss_plot_path)
     log_output(f'loss plot saved to {loss_plot_path}', output_path)
 except Exception as e:
@@ -357,11 +444,12 @@ try:
     cm = confusion_matrix(y_test, test_preds)
     plt.figure(figsize=(10, 7))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-    plt.title('Confusion Matrix (Absolute Values)')
+    plt.title(f'Confusion Matrix (Absolute Values) for {target_hours} hours after admission and {target_entries} entries')
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
+
     cm_plot_path = os.path.join(plot_dir, f'confusion_matrix_abs_{current_time}.png')
-    create_directory(os.path.dirname(cm_plot_path))  # Ensure the directory exists
+    create_directory(os.path.dirname(cm_plot_path))
     plt.savefig(cm_plot_path)
     log_output(f'confusion matrix (absolute values) saved to {cm_plot_path}', output_path)
 except Exception as e:
@@ -372,24 +460,148 @@ try:
     cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
     plt.figure(figsize=(10, 7))
     sns.heatmap(cm_percentage, annot=True, fmt='.2%', cmap='Blues')
-    plt.title('Confusion Matrix (Percentage Values)')
+    plt.title(f'Confusion Matrix (Percentage Values) for {target_hours} hours after admission and {target_entries} entries')
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
+
     cm_percentage_plot_path = os.path.join(plot_dir, f'confusion_matrix_percentage_{current_time}.png')
-    create_directory(os.path.dirname(cm_percentage_plot_path))  # Ensure the directory exists
+    create_directory(os.path.dirname(cm_percentage_plot_path))
     plt.savefig(cm_percentage_plot_path)
     log_output(f'confusion matrix (percentage values) saved to {cm_percentage_plot_path}', output_path)
 except Exception as e:
     log_output(f'error plotting confusion matrix (percentage values): {e}', output_path)
 
+# ROC curve and AUC
+try:
+    y_pred_prob = model.predict(X_test_preprocessed)
+    fpr, tpr, _ = roc_curve(y_test, y_pred_prob[:, 1], pos_label=1)
+    roc_auc = auc(fpr, tpr)
+    plt.figure(figsize=(10, 7))
+    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('true Positive Rate')
+    plt.title(f'ROC Curve for {target_hours} hours after admission and {target_entries} entries')
+    plt.legend(loc='lower right')
+
+    # save the plot
+    roc_curve_path = os.path.join(plot_dir, f'roc_curve_{current_time}.png')
+    plt.savefig(roc_curve_path)
+    log_output(f'ROC curve saved to {roc_curve_path}', output_path)
+
+    plt.show()
+    plt.close()
+except Exception as e:
+    log_output(f'error plotting ROC curve: {e}', output_path)
+
+
+# precision recall curve
+try:
+    precision, recall, _ = precision_recall_curve(y_test, y_pred_prob[:, 1])
+    avg_precision = average_precision_score(y_test, y_pred_prob[:, 1])
+    plt.figure(figsize=(10, 7))
+    plt.plot(recall, precision, color='blue', lw=2, label=f'Precision Recall Curve (AP = {avg_precision:.2f})')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title(f'Precision-Recall Curve for {target_hours} hours after admission and {target_entries} entries')
+    plt.legend(loc='lower left')
+
+    # save the plot
+    pr_curve_path = os.path.join(plot_dir, f'precision_recall_curve_{current_time}.png')
+    plt.savefig(pr_curve_path)
+    log_output(f'precision recall curve saved to {pr_curve_path}', output_path)
+
+    plt.show()
+    plt.close()
+except Exception as e:
+    log_output(f'error plotting precision recall curve: {e}', output_path)
+
+# class distribution
+try:
+    plt.figure(figsize=(10, 7))
+    true_classes = pd.Series(y_test, name='True Class')
+    pred_classes = pd.Series(test_preds, name='Predicted Class')
+    df = pd.concat([true_classes, pred_classes], axis=1)
+    df_melt = df.melt(var_name='Type', value_name='Class')
+    sns.countplot(x='Class', hue='Type', data=df_melt)
+    plt.title(f'Class Distribution: True vs Predicted for {target_hours} hours after admission and {target_entries} entries')
+    plt.xlabel('Class')
+    plt.ylabel('Count')
+
+    class_dist_path = os.path.join(plot_dir, f'class_distribution_{current_time}.png')
+    plt.savefig(class_dist_path)
+    log_output(f'class distribution plot saved to {class_dist_path}', output_path)
+
+    plt.show()
+    plt.close()
+except Exception as e:
+    log_output(f'error plotting class distribution: {e}', output_path)
+
+
+# histograms of predicted probabilities
+try:
+    plt.figure(figsize=(12, 8))
+    for i in range(y_pred_prob.shape[1]):
+        sns.histplot(y_pred_prob[:, i], kde=True, bins=50, label=f'Class {i}', stat="density", common_norm=False)
+    plt.title(f'Histograms of Predicted probabilities for {target_hours} hours after admission and {target_entries} entries')
+    plt.xlabel('Predicted Probability')
+    plt.ylabel('Density')
+    plt.legend(title='Class')
+
+    # Save the plot
+    hist_prob_path = os.path.join(plot_dir, f'histogram_predicted_probabilities_{current_time}.png')
+    plt.savefig(hist_prob_path)
+    log_output(f'histogram of predicted probabilities saved to {hist_prob_path}', output_path)
+
+    plt.show()
+    plt.close()
+except Exception as e:
+    log_output(f'error plotting histogram of predicted probabilities: {e}', output_path)
 
 
 # create the final output file name
-final_output_file = f'901_full_data_pred_{target_hours}_{target_entries}.csv'
+final_output_file = f'902_full_data_pred_{target_hours}_{target_entries}.csv'
 
 # save the final merged DataFrame
 merged_df.to_csv(os.path.join(target_directory, final_output_file), index=False)
 print(f'Final merged DataFrame saved to {final_output_file}')
+
+'''
+step ??? 6 i think: summary of results
+'''
+
+# generate and save a summary table
+summary_file_path = os.path.join(log_dir, f'summary_{current_time}.txt')
+with open(summary_file_path, 'w', encoding='utf-8') as f:
+    f.write(f'Target file name: {target_file}\n')
+    f.write(f'Hyperparameters:\n')
+    f.write(f' - epochs: {epochs}\n')
+    f.write(f' - learning rate: {learningrate}\n')
+    f.write(f' - batch size: {batchsize}\n')
+    f.write(f' - test size: {testsize}\n')
+    f.write(f' - early stopping start: {earlystopping_start}\n')
+    f.write(f' - early stopping patience: {earlystopping_patience}\n')
+    f.write(f' - total time limit: {total_time_limit}\n')
+    f.write(f' - max layer size: {max_layersize}\n')
+    f.write(f' - l1 regularization: {l1reg}\n')
+    f.write(f' - l2 regularization: {l2reg}\n')
+
+    f.write(f'Results:\n')
+    f.write(f' - Overall Accuracy: {accuracy_score(y_test, test_preds):.4f}\n')
+    f.write(f' - Roc Auc: {roc_auc:.4f}\n')
+
+    # Calculate and write precision for each class
+    precision_report = classification_report(y_test, test_preds, output_dict=True)
+    for cls in range(3):
+        f.write(f' - Precision for class {cls}: {precision_report[str(cls)]["precision"]:.4f}\n')
+
+    # Write overall precision
+    f.write(f' - Overall Precision: {precision_report["weighted avg"]["precision"]:.4f}\n')
+
+log_output(f'Summary saved to {summary_file_path}', output_path)
+
 
 # calculate and print the execution time
 end_time = time.time()
