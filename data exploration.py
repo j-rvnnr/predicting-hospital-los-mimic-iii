@@ -45,12 +45,14 @@ create_directory(out_dir)
 df_ref = load_csv2('000_reference_data.csv')
 df_core = load_csv2('001_core_data.csv')
 
+
+
 df_admissions = load_csv2('111_admissions.csv')
 df_admissions_c = df_admissions[df_admissions['HADM_ID'].isin(df_core['HADM_ID'])]
 
 df_icustays = load_csv2('103_icu_stays.csv')
-df_iecv = load_csv2('202_iecv.csv')
-df_iemv = load_csv2('203_iemv.csv')
+#df_iecv = load_csv2('202_iecv.csv')
+#df_iemv = load_csv2('203_iemv.csv')
 
 df_icd9d = load_csv2('302_icd9d.csv')
 
@@ -60,11 +62,14 @@ df_procedures = load_csv2('307_procedures.csv')
 print(df_admissions.head())
 print(df_icustays.head())
 
-print(df_iemv.head())
+#print(df_iemv.head())
 
 print(df_icd9d.head())
 print(df_prescriptions.head())
 print(df_procedures.head())
+
+
+
 
 
 # smooth histogram plot function
@@ -176,7 +181,7 @@ def scatter_plot(df, column, output_dir):
 age_range_order = ['16-18', '19-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90+']
 
 
-histogram_plot_days(df_admissions_c, 'los_hours', out_dir)
+#histogram_plot_days(df_admissions_c, 'los_hours', out_dir)
 # smooth_histogram_plot(df_admissions_c, 'los_hours', out_dir)
 
 # box_whisker_plot(df_admissions_c, 'age_range', out_dir, order=age_range_order)
@@ -186,9 +191,9 @@ histogram_plot_days(df_admissions_c, 'los_hours', out_dir)
 
 # box_whisker_plot(df_admissions_c, 'marital_status_group', out_dir)
 
-box_whisker_plot(df_icustays, 'FIRST_CAREUNIT', out_dir)
+#box_whisker_plot(df_icustays, 'FIRST_CAREUNIT', out_dir)
 
-box_whisker_plot(df_icd9d, 'diagnosis_category', out_dir)
+#box_whisker_plot(df_icd9d, 'diagnosis_category', out_dir)
 
-scatter_plot(df_iemv, 'PATIENTWEIGHT', out_dir)
-scatter_plot(df_icustays, 'icu_los', out_dir)
+#scatter_plot(df_iemv, 'PATIENTWEIGHT', out_dir)
+#scatter_plot(df_icustays, 'icu_los', out_dir)

@@ -51,10 +51,10 @@ earlystopping_start = 200
 earlystopping_patience = 50
 
 # total time limit (seconds)[3600 is 1 hour]
-total_time_limit = 3600/6
+total_time_limit = 3600
 
 # neural network parameters
-max_layersize = 512/16
+max_layersize = 512
 l1reg = 0.001
 l2reg = 0.001
 dropout = 0.5

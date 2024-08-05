@@ -38,15 +38,15 @@ import tensorflow as tf
 
 # these variables are for data handling, whether we wish to include the longstay, only look at the longstay, and
 # whether we want to include categorical data.
-pred_class_list = [0, 1, 2]
+pred_class_list = [0, 1]
 class_list_str = '_'.join(map(str, pred_class_list))
-num_only = 1
+num_only = 0
 
 # these are hyperparameters for the neural network, including runtime, learningrate, batch size and the train/test
 # split size.
-epochs = 400
+epochs = 1000
 learningrate = 0.0005
-batchsize = 32
+batchsize = 64
 testsize = 0.2
 
 # earlystopping parameters
@@ -54,20 +54,28 @@ earlystopping_start = 200
 earlystopping_patience = 50
 
 # total time limit (seconds)[36000 is 10 hours]
-total_time_limit = 3600/48
+total_time_limit = 3600*11
+
 
 # neural network parameters
-max_layersize = 512
+max_layersize = 200
 l1reg = 0.001
 l2reg = 0.001
 dropout = 0.4
+
+'''
+if using num_only = 1, you can set these numbers above as high as you like, max layer size works up to at least 512.
+if num_only = 0, keep max_layersize to under 150, as it requires a lot of memory to run the network with that set much
+higher. 
+'''
 
 # miscellaneous other parameters for the model, the data and feature importance limiter
 xval_kfolds = 2
 random_state = 117
 top_n = 50
 
-# colour plotting I think
+# colour plotting I think (I've set the colours this way for colourblind people, 0 is blue, 1 is orange and 2 is green,
+# and I didn't want orange and green to be beside each other on my plot.
 default_palette = sns.color_palette()
 colors = {0: default_palette[1], 1: default_palette[0], 2: default_palette[2]}
 
@@ -402,6 +410,23 @@ try:
     log_output(f'scatter plot saved to {scatter_plot_path}', output_path)
 except Exception as e:
     log_output(f'error plotting scatter plot: {e}', output_path)
+
+# separate graphs
+for cls in colors.keys():
+    try:
+        plt.figure()
+        class_indices = pred_stay_class_test == cls
+        plt.scatter(y_test[class_indices], avg_test_preds[class_indices], alpha=0.5, c=colors[cls])
+        plt.title(f'Predicted vs Actual LOS for Class {cls}')
+        plt.xlabel('Actual LOS')
+        plt.ylabel('Predicted LOS')
+        plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)
+        scatter_plot_path = os.path.join(plot_dir, f'predicted_vs_actual_class_{cls}_{current_time}_{class_list_str}.png')
+        plt.savefig(scatter_plot_path)
+        log_output(f'scatter plot for class {cls} saved to {scatter_plot_path}', output_path)
+        plt.close()
+    except Exception as e:
+        log_output(f'error plotting scatter plot for class {cls}: {e}', output_path)
 
 # residual Plot
 try:

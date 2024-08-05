@@ -37,9 +37,9 @@ target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-da
 section_name = ''
 
 # ranges for parameters
-num_entries = [10, 15, 20]
+num_entries = [1, 3, 5]
 time_window = [72]
-max_cat = [2]
+max_cat = [20]
 completeness_threshold = 80
 
 exp_exceptions = ['los_hours']
@@ -961,7 +961,7 @@ def data_process():
     df_ref = map_age_range(df_ref)
 
     # drop the un-needed columns
-    df_ref = df_ref.drop(columns=['DOB', 'DISCHTIME', 'age'])
+    df_ref = df_ref.drop(columns=['DOB', 'DISCHTIME'])
 
     # saving the main reference csv. This is filtered data with age > 16 and mapped, and only surviving patients,
     save_csv(df_ref, os.path.join(out_dir, section_name))
