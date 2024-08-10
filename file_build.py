@@ -9,15 +9,17 @@ from scipy import stats
 from scipy.stats import spearmanr, kruskal
 from sklearn.impute import SimpleImputer
 
-'''
-Step 0:
-initialisation of variables
+####################################################################################################
+#                                                                                                  #
+# Step 0:                                                                                          #
+# Initialisation of variables                                                                      #
+#                                                                                                  #
+# Start the script timer.                                                                          #
+# Set the pandas display options for console output.                                               #
+# Set variables that we use throughout the script.                                                 #
+#                                                                                                  #
+####################################################################################################
 
-start the script timer.
-set the pandas display options for console output.
-set variables that we use throughout the script.
-
-'''
 
 # setting pandas display options
 pd.set_option('display.max_rows', None)
@@ -37,8 +39,8 @@ target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-da
 section_name = ''
 
 # ranges for parameters
-num_entries = [1, 3, 5]
-time_window = [72]
+num_entries = [5]
+time_window = [24, 48]
 max_cat = [20]
 completeness_threshold = 80
 
@@ -52,14 +54,17 @@ longstay = 504  # this is 21 days in hours
 os.chdir(target_directory)
 print(f'Directory set to: {target_directory}')
 
-'''
-Step 1:
-Function library.
+####################################################################################################
+#                                                                                                  #
+# Step 1:                                                                                          #
+# Function library                                                                                 #
+#                                                                                                  #
+# This section keeps the majority of the functions which are used multiple times throughout        #
+# the script. There are some one-off scripts present in other locations in the script, but most    #
+# of the repeat-use functions are up here.                                                         #
+#                                                                                                  #
+####################################################################################################
 
-This section keeps the majority of the functions which are used multiple times throughout the script.
-There are some one off scripts present in other locations in the script, but most of the repeat use functions are up
-here. 
-'''
 
 '''
 1.1:
@@ -888,22 +893,26 @@ def assess_func(df, log_path):
     print(sample_df)
 
 
-'''
-step 2:
-Processing the data.
+####################################################################################################
+#                                                                                                  #
+# Step 2:                                                                                          #
+# Processing the data                                                                              #
+#                                                                                                  #
+# This step is where we process the CSV files into a form that we can use later on for machine     #
+# learning and further statistical analysis. It's a three-step processing system, where we use     #
+# the results from the previous step to complete the next.                                         #
+#                                                                                                  #
+# The first step is basic data cleaning, the second step is feature engineering, and the final     #
+# step is synthesizing missing data so our machine learning model has a complete dataset to work   #
+# with.                                                                                            #
+#                                                                                                  #
+# The intention is that each step is skipped if the following step's files are already present     #
+# within the data folder. However, if this part of the comment is present, you can safely assume   #
+# that I did not have time to implement that, and as a result, the whole script will be quite      #
+# slow, as it spends a fair bit of time loading in files that it just immediately discards.        #
+#                                                                                                  #
+####################################################################################################
 
-This step is where we process the csv files, into a form which we can use later on, for machine learning and further
-statistical analysis. It's a three step processing system, where we use the results from the previous step to complete 
-the next.
-
-The first step is basic data cleaning, the second step is feature engineering and the final step is synthesising missing
-data so our machine learning model has a complete dataset to work with.
-
-The intention is that each step is skipped if the following step's files are already present within the data folder,
-however if this part of this comment is present, you can safely assume that I did not have time to implement that, and
-as a result, the whole script will be quite slow, as it spends a fair bit of time loading in files which it just
-immediately discards. 
-'''
 
 # timer to make sure there's no shenanigans afoot
 st_time = time.time()
@@ -1643,16 +1652,21 @@ dataframes = [
     ('df_procedures', df_procedures)
 ]
 
-'''
-Step 2.5:
-First Analysis section: 
+####################################################################################################
+#                                                                                                  #
+# Step 2.5:                                                                                        #
+# First Analysis section                                                                           #
+#                                                                                                  #
+# This section only runs if the analysis variable is set to 1 at the start; otherwise, it's        #
+# skipped.                                                                                         #
+#                                                                                                  #
+# It runs a Kruskal-Wallis and Spearman correlation for each variable and prints them off,         #
+# allowing me to determine which features I am going to use for the model analysis. However,       #
+# it takes a long time to run, so while I am doing many repeats of this file, I will set it to 0   #
+# for the time being.                                                                              #
+#                                                                                                  #
+####################################################################################################
 
-This section only runs if analysis var is set to 1 at the start, otherwise it's skipped.
-
-It runs a kruskal wallis and spearman correlation for each variable and prints them off, allowing me to determine which
-features I am going to use for the model analysis. However, it takes a long time to run, so whilst I am doing many
-repeats of this file, I will set it to 0 for the time being.
-'''
 
 if analysis_var == 1:
     outlier_categorical_results_all = []
@@ -1741,25 +1755,30 @@ if analysis_var == 1:
 else:
     print('Analysis skipped as analysis_var is set to 0.')
 
-'''
-Step 3:
-feature engineering section:
+####################################################################################################
+#                                                                                                  #
+# Step 3:                                                                                          #
+# Feature engineering section                                                                      #
+#                                                                                                  #
+# This is the main feature engineering section of the script. There have been some light touches   #
+# above, as things like mapping/reducing dimensionality could be considered feature engineering,   #
+# but this is the main section.                                                                    #
+#                                                                                                  #
+# The goal here is to reduce the ratio of categorical to numerical features within the data. As    #
+# it stands, the final data is about 75%~ categorical, which when we one-hot encode, becomes a     #
+# very large, very sparse array. This impacts training time and makes the neural network quite     #
+# prone to overfitting. Although in this section, we do have some number of categorical variables  #
+# being created, the main focus was to increase the number/usefulness of numerical variables.      #
+#                                                                                                  #
+# At the end, there is another KW and SCC variability analysis. This is to inspect whether this    #
+# section has actually done anything, or if the variables are simply not worth using.              #
+#                                                                                                  #
+# Final note: all the new columns that I will be creating are in lowercase, as the columns present #
+# in the original data are all uppercase. This makes it easy to quickly visually distinguish which #
+# columns are feature engineered, and which columns are present from the original data.            #
+#                                                                                                  #
+####################################################################################################
 
-This is the main feature engineering section of the script. There have been some light touches above, as things like
-mapping/reducing dimensionality could be considered feature engineering, but this is the main section. 
-
-The goal here is to reduce the ratio of categorical to numerical features within the data. As it stands, the final data
-is about 75%~ categorical, which when we one-hot encode, becomes a very large very sparse array. This impacts training
-time and makes the neural network quite prone to over-fitting. Although in this section, we do have some number of cat
-variables being created, the main focus was to increase the number/usefulness of numerical variables. 
-
-At the end, there is another KW and SCC variablility analysis. This is to inspect whether this section has actually done
-anything, or if the variables are simply not worth using. 
-
-Final note: all the new columns that I will be creating are in lowercase, as the columns present in the original data
-are all uppercase. This makes it easy to quickly visually distinguish which columns are feature engineered, and which
-columns are present from the original data.
-'''
 
 # load in reference data
 core = load_csv(os.path.join(out_dir, '000_reference_data.csv'))
@@ -2234,6 +2253,10 @@ else:
     # mode of category
     df_icd9d = make_mode_column(df_icd9d, 'diagnosis_category')
 
+    # count the total number of diagnoses in each category (experimental)
+    category_counts = df_icd9d.groupby(['HADM_ID', 'diagnosis_category']).size().unstack(fill_value=0)
+    df_icd9d = df_icd9d.merge(category_counts, on='HADM_ID', how='left', suffixes=('', '_count'))
+
     # save the dataframe
     save_csv(df_icd9d, os.path.join(out_dir, section_name))
     time_elapsed = round(time.time() - st_time, 3)
@@ -2408,10 +2431,13 @@ else:
     time_elapsed = round(time.time() - st_time, 3)
     log_output(f'{section_name} saved at {time_elapsed}', log_path)
 
-'''
-step 3.5
-statistical analysis for the new feature engineered columns
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 3.5:                                                                                        #
+# Statistical analysis for the new feature-engineered columns                                      #
+#                                                                                                  #
+####################################################################################################
+
 
 # refresh dataframe references
 dataframes = [
@@ -2544,13 +2570,15 @@ exclusions = ['HADM_ID', 'SUBJECT_ID', 'los_hours', 'ADMITTIME', 'STARTDATE', 'E
 # define the output directory correctly
 out_dir = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
 
-'''
-Step 4:
-data synthesis.
+####################################################################################################
+#                                                                                                  #
+# Step 4:                                                                                          #
+# Data synthesis                                                                                   #
+#                                                                                                  #
+# This is where we synthesize the data for the machine learning part of the project.               #
+#                                                                                                  #
+####################################################################################################
 
-This is where we synthesize the data for the machine learning part of the project. 
-
-'''
 
 # synthesizing numerical columns in preparation for machine learning
 for df_name, df in dataframes:
@@ -2738,7 +2766,7 @@ for tw in time_window:
 
         # merge los_hours from df_ref if it's missing in combined_df
         if 'los_hours' not in combined_df.columns:
-            combined_df = pd.merge(combined_df, df_ref[['HADM_ID', 'los_hours']], on='HADM_ID', how='left')
+            combined_df = pd.merge(combined_df, df_ref[['HADM_ID', 'los_hours', 'age']], on='HADM_ID', how='left')
 
             # insert los_hours right after HADM_ID
             if 'los_hours' in combined_df.columns:

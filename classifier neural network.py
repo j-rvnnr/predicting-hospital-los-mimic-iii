@@ -1,6 +1,8 @@
 import gc
 import time
 import os
+from itertools import cycle
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,7 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc, \
     precision_recall_curve, average_precision_score
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -20,10 +22,19 @@ from tensorflow.keras.callbacks import EarlyStopping, Callback
 from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras import Input
 from tensorflow.keras.optimizers import AdamW
+from ann_visualizer.visualize import ann_viz
+from tensorflow.keras.utils import plot_model
 
-'''
-initialise variables
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 0:                                                                                          #
+# Initialise variables                                                                             #
+#                                                                                                  #
+# These are grouped roughly by the order that they appear in the script, although it's not         #
+# perfect. There are clarifying comments to help with some of the variables here.                  #
+#                                                                                                  #
+####################################################################################################
+
 # setting pandas display options
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
@@ -41,13 +52,13 @@ target_catlimit = 20
 
 # these are hyperparameters for the neural network, including runtime, learningrate, batch size and the train/test
 # split size.
-epochs = 500
+epochs = 250
 learningrate = 0.0005
 batchsize = 128
 testsize = 0.25 # IT HAS TO BE 0.25 IN THIS SCRIPT OTHERWISE WE CAN GET ERRORS DO NOT CHANGE
 
 # earlystopping parameters
-earlystopping_start = 200
+earlystopping_start = 100
 earlystopping_patience = 50
 
 # total time limit (seconds)[3600 is 1 hour]
@@ -70,9 +81,19 @@ longstay = 504
 # define exceptions
 exceptions = ['los_hours', 'stay_class', 'los_days']
 
-'''
-step 0 functions
-'''
+# define colours
+default_palette = sns.color_palette()
+colors = {0: default_palette[1], 1: default_palette[0], 2: default_palette[2]}
+
+####################################################################################################
+#                                                                                                  #
+# Step 1:                                                                                          #
+# Functions library                                                                                #
+#                                                                                                  #
+# These are the functions used in the script, and the custom callbacks.                            #
+#                                                                                                  #
+####################################################################################################
+
 
 # function for logging output of console.
 def log_output(output, file_path):
@@ -111,19 +132,19 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
     model.add(Dropout(dropout))
 
     # layer 2
-    model.add(Dense(int(max_layersize/2), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
     model.add(Dropout(dropout))
 
     # layer 3
-    model.add(Dense(int(max_layersize/4), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
     model.add(Dropout(dropout))
 
     # layer 4
-    model.add(Dense(int(max_layersize/8), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
-    model.add(Dropout(0.2)) # this dropout is deliberately lower, it does improve performance for some reason
+    # no dropout layer before passing to the output.
 
     # output layer, with 3 neurons for the 3 classes we are trying to predict
     model.add(Dense(3, activation='softmax'))
@@ -134,8 +155,15 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
-    return model
 
+    # picture of model. THIS IS UGLY BUT IT WORKS AND TIME IS RUNNING OUT
+    plot_model(model,
+               to_file='classifier_image.png',
+               show_shapes=True,
+               show_layer_names=False,
+               rankdir='TB')
+
+    return model
 def create_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -164,18 +192,24 @@ def closest_class(mode, mean, median):
     return np.clip(closest, classes.min(), classes.max())
 
 
-'''
-step 1 run script and preprocess data
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 1:                                                                                          #
+# Preprocess data and start script                                                                 #
+#                                                                                                  #
+# Adds the stay class, and performs the pre-processing, as well as splitting the data into 8 sets  #
+# and shuffling them so that we can do cross validation.                                           #
+#                                                                                                  #
+####################################################################################################
+
 
 # start the script timer
 start_time = time.time()
+print(f'the time is:{time.strftime('%m%d-%H%M')}')
+print(f'at script begin.')
 
 # get the file name for output by adding classifier for classification model and the current time
 current_time = f'classifier-{time.strftime('%m%d-%H%M')}'
-
-
-
 
 target_file = f'901_cleaned_combined_data{target_hours}_{target_entries}_{target_catlimit}.csv'
 target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
@@ -209,7 +243,7 @@ test_set_pairs_4 = [(1, 5), (2, 7), (3, 6), (4, 8)]
 test_set_pairs_5 = [(1, 6), (2, 8), (3, 7), (4, 5)]
 test_set_pairs_6 = [(1, 7), (2, 4), (3, 5), (6, 8)]
 
-all_test_set_pairs = [test_set_pairs_1, test_set_pairs_3, test_set_pairs_5, test_set_pairs_4]
+all_test_set_pairs = [test_set_pairs_1 , test_set_pairs_3, test_set_pairs_5]
 
 #all_test_set_pairs = [test_set_pairs_1, test_set_pairs_2, test_set_pairs_3,
 #                     test_set_pairs_4, test_set_pairs_5, test_set_pairs_6]
@@ -251,9 +285,15 @@ else:
             ('cat', categorical_transformer, categorical_features)
         ])
 
-'''
-step 2 running the model
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 2:                                                                                          #
+# Running the model                                                                                #
+#                                                                                                  #
+# Simply runs the model for any test set pairs, and saves the prediction data for later.           #
+#                                                                                                  #
+####################################################################################################
+
 
 # finding the number of model runs, and allocating them each equal time
 num_model_runs = len(all_test_set_pairs) * len(all_test_set_pairs[0])
@@ -304,9 +344,16 @@ for set_num, test_set_pairs in enumerate(all_test_set_pairs, 1):
     pred_values[pred_col_name] = combined_test_preds
 
 
-'''
-step 3 making the file
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 3:                                                                                          #
+# Making the file                                                                                  #
+#                                                                                                  #
+# This is the part where we take the predicted classes, do a small bit of feature engineering      #
+# which I hope is useful, and save it to file, so that I can feed it into the regressor.           #
+#                                                                                                  #
+####################################################################################################
+
 # sort the prediction values by HADM_ID to undo any shuffling
 pred_values = pred_values.sort_values(by='HADM_ID')
 
@@ -359,9 +406,16 @@ columns_order = ['HADM_ID', 'stay_class', 'pred_stay_class'] + \
 merged_df = merged_df[columns_order]
 # ok this is a bit messy but it works
 
-'''
-Feature importance section
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 4:                                                                                          #
+# Feature importance section                                                                       #
+#                                                                                                  #
+# This is the part where we determine feature importance using a Gradient Boosted Classifier.      #
+# Is it useful? Yes it is.                                                                         #
+#                                                                                                  #
+####################################################################################################
+
 
 # identify the worst prediction
 errors = np.abs(y_test - test_preds)
@@ -418,9 +472,16 @@ else:
     log_output('Feature importance calculation is skipped.', output_path)
 
 
-'''
-step 4 plotting the information
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 5:                                                                                          #
+# Plotting                                                                                         #
+#                                                                                                  #
+# Simply make some plots. I got a bit experimental here; some of these charts are borderline       #
+# useless, but it's nice to visualize.                                                             #
+#                                                                                                  #
+####################################################################################################
+
 
 # plot training & validation loss values
 try:
@@ -471,52 +532,44 @@ try:
 except Exception as e:
     log_output(f'error plotting confusion matrix (percentage values): {e}', output_path)
 
-# ROC curve and AUC
-try:
-    y_pred_prob = model.predict(X_test_preprocessed)
-    fpr, tpr, _ = roc_curve(y_test, y_pred_prob[:, 1], pos_label=1)
-    roc_auc = auc(fpr, tpr)
-    plt.figure(figsize=(10, 7))
-    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('true Positive Rate')
-    plt.title(f'ROC Curve for {target_hours} hours after admission and {target_entries} entries')
-    plt.legend(loc='lower right')
 
-    # save the plot
-    roc_curve_path = os.path.join(plot_dir, f'roc_curve_{current_time}.png')
-    plt.savefig(roc_curve_path)
-    log_output(f'ROC curve saved to {roc_curve_path}', output_path)
+# ROC new and improved, hopefully for all 3 classes now.
 
-    plt.show()
-    plt.close()
-except Exception as e:
-    log_output(f'error plotting ROC curve: {e}', output_path)
+# binarize the output labels
+y_pred_prob = model.predict(X_test_preprocessed)
+y_test_bin = label_binarize(y_test, classes=[0, 1, 2])  # Assuming 3 classes (0, 1, 2)
+n_classes = y_test_bin.shape[1]
 
+#  ROC curve and ROC area for each class
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
 
-# precision recall curve
-try:
-    precision, recall, _ = precision_recall_curve(y_test, y_pred_prob[:, 1])
-    avg_precision = average_precision_score(y_test, y_pred_prob[:, 1])
-    plt.figure(figsize=(10, 7))
-    plt.plot(recall, precision, color='blue', lw=2, label=f'Precision Recall Curve (AP = {avg_precision:.2f})')
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title(f'Precision-Recall Curve for {target_hours} hours after admission and {target_entries} entries')
-    plt.legend(loc='lower left')
+for i in range(n_classes):
+    fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_pred_prob[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
 
-    # save the plot
-    pr_curve_path = os.path.join(plot_dir, f'precision_recall_curve_{current_time}.png')
-    plt.savefig(pr_curve_path)
-    log_output(f'precision recall curve saved to {pr_curve_path}', output_path)
+# plot all ROC curves
+plt.figure(figsize=(10, 7))
+for i in range(n_classes):
+    color = colors[i]
+    plt.plot(fpr[i], tpr[i], color=color, lw=2, label=f'ROC curve of class {i} (area = {roc_auc[i]:.2f})')
 
-    plt.show()
-    plt.close()
-except Exception as e:
-    log_output(f'error plotting precision recall curve: {e}', output_path)
+plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC curve per class')
+plt.legend(loc="lower right")
+
+# save
+roc_curve_path = os.path.join(plot_dir, f'roc_curve_{current_time}.png')
+plt.savefig(roc_curve_path)
+log_output(f'ROC curve saved to {roc_curve_path}', output_path)
+
+plt.show()
+plt.close()
 
 # class distribution
 try:
@@ -540,25 +593,12 @@ except Exception as e:
     log_output(f'error plotting class distribution: {e}', output_path)
 
 
-# histograms of predicted probabilities
-try:
-    plt.figure(figsize=(12, 8))
-    for i in range(y_pred_prob.shape[1]):
-        sns.histplot(y_pred_prob[:, i], kde=True, bins=50, label=f'Class {i}', stat="density", common_norm=False)
-    plt.title(f'Histograms of Predicted probabilities for {target_hours} hours after admission and {target_entries} entries')
-    plt.xlabel('Predicted Probability')
-    plt.ylabel('Density')
-    plt.legend(title='Class')
-
-    # Save the plot
-    hist_prob_path = os.path.join(plot_dir, f'histogram_predicted_probabilities_{current_time}.png')
-    plt.savefig(hist_prob_path)
-    log_output(f'histogram of predicted probabilities saved to {hist_prob_path}', output_path)
-
-    plt.show()
-    plt.close()
-except Exception as e:
-    log_output(f'error plotting histogram of predicted probabilities: {e}', output_path)
+####################################################################################################
+#                                                                                                  #
+# Step 6:                                                                                          #
+# Save the combined output file                                                                    #
+#                                                                                                  #
+####################################################################################################
 
 
 # create the final output file name
@@ -568,9 +608,13 @@ final_output_file = f'902_full_data_pred_{target_hours}_{target_entries}.csv'
 merged_df.to_csv(os.path.join(target_directory, final_output_file), index=False)
 print(f'Final merged DataFrame saved to {final_output_file}')
 
-'''
-step ??? 6 i think: summary of results
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 7:                                                                                          #
+# Summary of results                                                                               #
+#                                                                                                  #
+####################################################################################################
+
 
 # generate and save a summary table
 summary_file_path = os.path.join(log_dir, f'summary_{current_time}.txt')
@@ -590,14 +634,17 @@ with open(summary_file_path, 'w', encoding='utf-8') as f:
 
     f.write(f'Results:\n')
     f.write(f' - Overall Accuracy: {accuracy_score(y_test, test_preds):.4f}\n')
-    f.write(f' - Roc Auc: {roc_auc:.4f}\n')
 
-    # Calculate and write precision for each class
+    # write roc auc for each class
+    for cls in range(n_classes):
+        f.write(f' - Roc Auc for class {cls}: {roc_auc[cls]:.4f}\n')
+
+    # precision for each class
     precision_report = classification_report(y_test, test_preds, output_dict=True)
-    for cls in range(3):
+    for cls in range(n_classes):
         f.write(f' - Precision for class {cls}: {precision_report[str(cls)]["precision"]:.4f}\n')
 
-    # Write overall precision
+    # overall precision
     f.write(f' - Overall Precision: {precision_report["weighted avg"]["precision"]:.4f}\n')
 
 log_output(f'Summary saved to {summary_file_path}', output_path)

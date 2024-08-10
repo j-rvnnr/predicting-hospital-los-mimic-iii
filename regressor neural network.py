@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler, RobustScaler
+from sklearn.preprocessing import Normalizer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -20,6 +21,7 @@ from tensorflow.keras import backend as K
 from tensorflow.keras import Input
 from tensorflow.keras.regularizers import l1_l2
 import tensorflow as tf
+from boruta import BorutaPy
 
 
 
@@ -38,30 +40,29 @@ import tensorflow as tf
 
 # these variables are for data handling, whether we wish to include the longstay, only look at the longstay, and
 # whether we want to include categorical data.
-pred_class_list = [0, 1]
+pred_class_list = [0, 1, 2]
 class_list_str = '_'.join(map(str, pred_class_list))
-num_only = 0
 
-# these are hyperparameters for the neural network, including runtime, learningrate, batch size and the train/test
-# split size.
-epochs = 1000
+consider_preds = 0 # this counts whether we consider the results of the classifier.
+num_only = 1
+boruta_feature_importance = 0 # extremely slow
+gb_feature_importance = 0
+
+# these are hyperparameters for the neural network
+epochs = 500
 learningrate = 0.0005
-batchsize = 64
+batchsize = 128
 testsize = 0.2
 
 # earlystopping parameters
 earlystopping_start = 200
 earlystopping_patience = 50
 
-# total time limit (seconds)[36000 is 10 hours]
-total_time_limit = 3600*11
-
-
 # neural network parameters
-max_layersize = 200
+max_layersize = 512
 l1reg = 0.001
 l2reg = 0.001
-dropout = 0.4
+dropout = 0.5
 
 '''
 if using num_only = 1, you can set these numbers above as high as you like, max layer size works up to at least 512.
@@ -69,10 +70,13 @@ if num_only = 0, keep max_layersize to under 150, as it requires a lot of memory
 higher. 
 '''
 
+# total time limit (seconds)[36000 is 10 hours]
+total_time_limit = 3600
+
 # miscellaneous other parameters for the model, the data and feature importance limiter
-xval_kfolds = 2
+xval_kfolds = 1 # how many cross validation folds we do
 random_state = 117
-top_n = 50
+top_n = 50 # this is how many features we print for the feature importance
 
 # colour plotting I think (I've set the colours this way for colourblind people, 0 is blue, 1 is orange and 2 is green,
 # and I didn't want orange and green to be beside each other on my plot.
@@ -150,24 +154,19 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
     model.add(Dropout(dropout))
 
     # layer 2, dense, regularisation, relu and dropout
-    model.add(Dense(int(max_layersize/2), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
     model.add(Dropout(dropout))
 
     # layer 3, dense, regularisation, relu and dropout
-    model.add(Dense(int(max_layersize/4), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
     model.add(Dropout(dropout))
+
 
     # layer 4, dense, regularisation, relu and dropout
-    model.add(Dense(int(max_layersize/8), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
+    model.add(Dense(int(max_layersize), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
     model.add(PReLU())
-    model.add(Dropout(dropout))
-
-    # layer 5, dense, regularisation, relu and dropout
-    model.add(Dense(int(max_layersize/16), activation='relu', kernel_regularizer=l1_l2(l1=l1_reg, l2=l2_reg)))
-    model.add(PReLU())
-    model.add(Dropout(dropout))
 
     # output layer, with a single node and linear activation
     model.add(Dense(1, activation='linear'))
@@ -180,6 +179,8 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
             'mae',
             'mse',
             huber_loss
+            # these are the three main loss functions I have experimented with. I put them all in the metrics so they
+            # can be observed as the model runs.
         ]
     )
     return model
@@ -210,7 +211,7 @@ start_time = time.time()
 current_time = f'regressor_{time.strftime("%Y%m%d-%H%M%S")}'
 
 # defining the file paths for the input data
-target_file = '902_full_data_pred_72_5.csv'
+target_file = '902_full_data_pred_48_5.csv'
 target_directory = r'C:\Users\ander\Documents\.Uni\Project\mimic-iii-clinical-database-1.4\.unpacked\output_files'
 core_test_file_path = os.path.join(target_directory, target_file)
 log_dir = os.path.dirname(core_test_file_path)
@@ -225,10 +226,10 @@ core_data = pd.read_csv(core_test_file_path, low_memory=False)
 
 
 # filtering the pred_stay_class so that we can specifically target individual classes.
-
+# I'm uncertain if I should target the actual stay class or the predicted stay class here, actual stay class makes
+# the results much better but predicted seems more in the spirit of things?
+# replace stay_class with pred_stay_class or vice versa
 core_data = core_data[core_data['pred_stay_class'].isin(pred_class_list)]
-
-
 
 
 # check for nan values in core_data
@@ -236,11 +237,21 @@ if core_data.isna().any().any():
     log_output('nan values found in data. Filling nans with column mean.', output_path)
     core_data.fillna(core_data.mean(), inplace=True)
 
-# exclude los_hours and preserve hadm hours for later use (validation)
-features = core_data.drop(columns=['los_hours', 'los_days', 'stay_class'])
-target = core_data['los_hours'] # set target variable
-hadm_ids = features['HADM_ID'] # save the hopsital_admission id's
-features = features.drop(columns=['HADM_ID']) # load in the features we wish to examine
+# consider preds code, adding all the outputs of the classifier model to that list
+exclude_substrings = [
+    'pred_value_set', 'mean_pred_class', 'median_pred_class', 'mode_pred_class',
+    'mean_pred_value_class', 'cumulative_pred_value_class', 'pred_stay_class'
+]
+# defining the columns to exclude
+exclude_columns = ['los_hours', 'los_days', 'stay_class']
+if consider_preds == 0:
+    exclude_columns += [col for col in core_data.columns if any(sub in col for sub in exclude_substrings)]
+
+# exclude specified columns and preserve hadm ids for later use (validation)
+features = core_data.drop(columns=exclude_columns)
+target = core_data['los_hours']  # set target variable
+hadm_ids = features['HADM_ID']  # save the hospital admission id's
+features = features.drop(columns=['HADM_ID'])  # load in the features we wish to examine
 
 numeric_features = features.select_dtypes(include=[np.number]).columns.tolist()
 categorical_features = features.select_dtypes(include=[object]).columns.tolist()
@@ -277,7 +288,6 @@ else:
             ('num', numeric_transformer, numeric_features),
             ('cat', categorical_transformer, categorical_features)
         ])
-
 # split the data into test and train sets, based on the testsize variable at the start
 log_output('splitting data into training and test sets', output_path)
 X_train, X_test, y_train, y_test, hadm_train, hadm_test = train_test_split(features, target, hadm_ids,
@@ -320,35 +330,52 @@ time_limit_callback = TimeLimitCallback(max_duration_seconds=total_time_limit)
 
 
 # train the model
-kf = KFold(n_splits=xval_kfolds, shuffle=True, random_state=random_state)
-fold = 1
-all_test_preds = []
+if xval_kfolds > 1:
+    kf = KFold(n_splits=xval_kfolds, shuffle=True, random_state=random_state)
+    fold = 1
+    all_test_preds = []
 
-training_start_time = time.time()  # Record the start time of the training process
+    training_start_time = time.time()  # record the start time of the training process
 
-for train_index, val_index in kf.split(X_train_preprocessed):
-    log_output(f'\nTraining fold {fold}', output_path)
+    for train_index, val_index in kf.split(X_train_preprocessed):
+        log_output(f'\nTraining fold {fold}', output_path)
 
-    X_fold_train, X_fold_val = X_train_preprocessed[train_index], X_train_preprocessed[val_index]
-    y_fold_train, y_fold_val = y_train.iloc[train_index], y_train.iloc[val_index]
+        X_fold_train, X_fold_val = X_train_preprocessed[train_index], X_train_preprocessed[val_index]
+        y_fold_train, y_fold_val = y_train.iloc[train_index], y_train.iloc[val_index]
+
+        model = create_model(input_dim=X_train_preprocessed.shape[1], learning_rate=learningrate)
+        history = model.fit(X_fold_train, y_fold_train, epochs=epochs, batch_size=batchsize, verbose=1,
+                            validation_data=(X_fold_val, y_fold_val), callbacks=[early_stopping, time_limit_callback])
+
+        fold_test_preds = model.predict(X_test_preprocessed)
+        all_test_preds.append(fold_test_preds)
+
+        fold += 1
+
+    training_end_time = time.time()
+
+    # calculate average time per epoch
+    total_training_time = training_end_time - training_start_time
+    average_time_per_epoch = total_training_time / (epochs * xval_kfolds)
+
+    # average the predictions from all folds
+    avg_test_preds = np.mean(all_test_preds, axis=0).flatten()
+else:
+    log_output(f'\nTraining without k-fold cross-validation', output_path)
+
+    training_start_time = time.time()  # record the start time of the training process
 
     model = create_model(input_dim=X_train_preprocessed.shape[1], learning_rate=learningrate)
-    history = model.fit(X_fold_train, y_fold_train, epochs=epochs, batch_size=batchsize, verbose=1,
-                        validation_data=(X_fold_val, y_fold_val), callbacks=[early_stopping, time_limit_callback])
+    history = model.fit(X_train_preprocessed, y_train, epochs=epochs, batch_size=batchsize, verbose=1,
+                        validation_split=0.2, callbacks=[early_stopping, time_limit_callback])
 
-    fold_test_preds = model.predict(X_test_preprocessed)
-    all_test_preds.append(fold_test_preds)
+    training_end_time = time.time()
 
-    fold += 1
+    # calculate average time per epoch
+    total_training_time = training_end_time - training_start_time
+    average_time_per_epoch = total_training_time / epochs
 
-training_end_time = time.time()
-
-# calculate average time per epoch
-total_training_time = training_end_time - training_start_time
-average_time_per_epoch = total_training_time / (epochs * xval_kfolds)
-
-# average the predictions from all folds
-avg_test_preds = np.mean(all_test_preds, axis=0).flatten()
+    avg_test_preds = model.predict(X_test_preprocessed).flatten()
 
 # handle extreme predictions
 cap_value = np.percentile(y_test, 99)
@@ -444,9 +471,15 @@ except Exception as e:
     log_output(f'error plotting residuals: {e}', output_path)
 
 
-'''
-step 5 finding the worst prediction, and determining which features are the most important.
-'''
+####################################################################################################
+#                                                                                                  #
+# Step 5:                                                                                          #
+#  Worst prediction + feature importance.                                                          #
+#                                                                                                  #
+# Finding the worst prediction, and determining which features are the most important.             #
+# This also includes the feature analysis section using boruta and a gradient boosted method       #
+#                                                                                                  #
+####################################################################################################
 
 # identify the worst prediction
 errors = np.abs(y_test - avg_test_preds)
@@ -461,25 +494,49 @@ log_output(f'worst prediction - actual value: {worst_prediction_actual}, predict
 worst_prediction_features = X_test.iloc[max_error_index]
 log_output(f'features of the worst prediction: {worst_prediction_features.to_dict()}', output_path)
 
+# feature Importance using Boruta
+if boruta_feature_importance == 1:
+    log_output('computing feature importance using Boruta', output_path)
+    gbr = GradientBoostingRegressor()
+    boruta_selector = BorutaPy(gbr, n_estimators='auto', random_state=random_state)
+    boruta_selector.fit(X_train_preprocessed, y_train)
+
+    top_indices = np.where(boruta_selector.support_)[0]
+    top_importances = boruta_selector.estimator_feature_importances_[top_indices]
+    top_feature_names = preprocessor.get_feature_names_out()[top_indices]
+
+    log_output(f'Top {len(top_indices)} feature importances using Boruta:', output_path)
+    for i in range(len(top_indices)):
+        log_output(f'{i + 1}. feature {top_feature_names[i]} ({top_importances[i]})', output_path)
+
 # feature Importance using Gradient Boosting Regressor
-log_output('computing feature importance using Gradient Boosting Regressor', output_path)
-gbr = GradientBoostingRegressor()
-gbr.fit(X_train_preprocessed, y_train)
+elif gb_feature_importance == 1:
+    log_output('computing feature importance using Gradient Boosting Regressor', output_path)
+    gbr = GradientBoostingRegressor()
+    gbr.fit(X_train_preprocessed, y_train)
 
-importances = gbr.feature_importances_
-indices = np.argsort(importances)[::-1]
+    importances = gbr.feature_importances_
+    indices = np.argsort(importances)[::-1]
 
-# get and log top n feature importances
-top_indices = indices[:top_n]
-top_importances = importances[top_indices]
-top_feature_names = preprocessor.get_feature_names_out()[top_indices]
-log_output(f'Top {top_n} feature importances:', output_path)
-for i in range(top_n):
-    log_output(f'{i + 1}. feature {top_feature_names[i]} ({top_importances[i]})', output_path)
+    # get and log top n feature importances
+    top_indices = indices[:top_n]
+    top_importances = importances[top_indices]
+    top_feature_names = preprocessor.get_feature_names_out()[top_indices]
+    log_output(f'Top {top_n} feature importances:', output_path)
+    for i in range(top_n):
+        log_output(f'{i + 1}. feature {top_feature_names[i]} ({top_importances[i]})', output_path)
 
-'''
-step ??? 6 i think: summary of results
-'''
+
+####################################################################################################
+#                                                                                                  #
+# Step 6:                                                                                          #
+# Summary of results.                                                                              #
+#                                                                                                  #
+# This prints all the summary details to a file at the end, including all the parameters.          #
+# This is for keeping track of my results.                                                         #
+#                                                                                                  #
+####################################################################################################
+
 
 # generate and save a summary table
 summary_file_path = os.path.join(log_dir, f'summary_{current_time}.txt')
@@ -498,13 +555,16 @@ with open(summary_file_path, 'w', encoding='utf-8') as f:
     f.write(f' - l2 regularization: {l2reg}\n')
     f.write(f' - dropout: {dropout}\n')
     f.write(f' - average time per epoch: {average_time_per_epoch:.4f} seconds\n')
-
+    f.write(f'\n')
+    f.write(f' - consider predicted values?: {consider_preds}\n')
+    f.write(f' - which classes are considered?: {", ".join(map(str, pred_class_list))}\n')
+    f.write(f'\n')
     f.write(f'Results:\n')
     f.write(f' - Total MAE: {test_mae:.4f}\n')
     f.write(f' - R2: {test_r2:.4f}\n')
 
-
 log_output(f'Summary saved to {summary_file_path}', output_path)
+
 
 
 
@@ -515,3 +575,4 @@ hours, rem = divmod(elapsed_time, 3600)
 minutes, seconds = divmod(rem, 60)
 log_output(f'Script took {elapsed_time:.2f} seconds to execute.', output_path)
 log_output(f'That\'s {int(hours)}:{int(minutes)}:{int(seconds)} (hh:mm:ss).', output_path)
+

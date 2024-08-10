@@ -45,28 +45,32 @@ create_directory(out_dir)
 df_ref = load_csv2('000_reference_data.csv')
 df_core = load_csv2('001_core_data.csv')
 
+df_ref['los_days'] = (df_ref['los_hours'] / 24).round().astype(int)
 
+print(df_ref['los_days'].head())
 
 df_admissions = load_csv2('111_admissions.csv')
 df_admissions_c = df_admissions[df_admissions['HADM_ID'].isin(df_core['HADM_ID'])]
+
+
 
 df_icustays = load_csv2('103_icu_stays.csv')
 #df_iecv = load_csv2('202_iecv.csv')
 #df_iemv = load_csv2('203_iemv.csv')
 
-df_icd9d = load_csv2('302_icd9d.csv')
+#df_icd9d = load_csv2('302_icd9d.csv')
 
-df_prescriptions = load_csv2('306_prescriptions.csv')
-df_procedures = load_csv2('307_procedures.csv')
+#df_prescriptions = load_csv2('306_prescriptions.csv')
+#df_procedures = load_csv2('307_procedures.csv')
 
 print(df_admissions.head())
 print(df_icustays.head())
 
 #print(df_iemv.head())
 
-print(df_icd9d.head())
-print(df_prescriptions.head())
-print(df_procedures.head())
+#print(df_icd9d.head())
+#(df_prescriptions.head())
+#print(df_procedures.head())
 
 
 
@@ -125,32 +129,74 @@ def box_whisker_plot(df, column, output_dir, order=None):
     plt.close()
 
 # histogram, specifically binned by days
-def histogram_plot_days(df, column, output_dir, bin_width=24):
+def histogram_plot_days(df, column, output_dir, bin_width=None, num_bins=None):
+    # calculate los_days
+    df.loc[:, 'los_days'] = df[column] / 24
 
-    df['los_days'] = df[column] / bin_width
 
-    # calculate buns
     max_days = np.ceil(df['los_days'].max())
-    bins = int(max_days)
+    if bin_width is not None:
+        bins = np.arange(0, max_days + bin_width, bin_width)
+    elif num_bins is not None:
+        bins = np.linspace(0, max_days, num_bins + 1)
+    else:
+        bins = np.arange(0, max_days + 1)  # Default to binning by day
 
+    # plot the histogram
     plt.figure(figsize=(12, 8))
     sns.histplot(df['los_days'], bins=bins, kde=False)
-    plt.title(f'Histogram of {column} (binned by day)')
+    plt.title(f'Histogram of {column} (binned by days)')
     plt.xlabel('LOS Days')
     plt.ylabel('Frequency')
-    plt.xticks(np.arange(0, max_days + 1, 1))  # Ensure ticks for each day
 
-    # ensure the directory exists
+    # adjust x-axis ticks to align with the bins
+    plt.xticks(bins)
+
+    # save
     create_directory(output_dir)
-
-    # save the plot
     plot_path = os.path.join(output_dir, f'histogram_{column}_by_day.png')
     plt.savefig(plot_path)
     print(f'Plot saved to {plot_path}')
 
-    # show the plot
+    # show
     plt.show()
     plt.close()
+
+def histogram_plot(df, column, output_dir, num_bins=None):
+
+    df['los_days'] = df[column].astype(int)
+
+    # determine the range of bins
+    if num_bins is not None:
+        max_days = min(df['los_days'].max(), num_bins)
+        bins = np.arange(0, max_days + 1)
+    else:
+        max_days = df['los_days'].max()
+        bins = np.arange(0, max_days + 1)  # default to binning by day
+
+    # plot the histogram
+    plt.figure(figsize=(12, 8))
+    sns.histplot(df['los_days'], bins=bins, kde=False)
+    plt.title(f'Histogram of Length of Stay (days)')
+    plt.xlabel('LOS days')
+    plt.ylabel('Frequency')
+
+
+    plt.xticks(bins)
+
+    # save
+    create_directory(output_dir)
+    plot_path = os.path.join(output_dir, f'histogram_{column}_by_day.png')
+    plt.savefig(plot_path)
+    print(f'plot saved to {plot_path}')
+
+    # sshow
+    plt.show()
+    plt.close()
+
+histogram_plot(df_ref, 'los_days', out_dir, num_bins=30
+               )
+
 
 # scatter plot function
 def scatter_plot(df, column, output_dir):
@@ -178,12 +224,21 @@ def scatter_plot(df, column, output_dir):
 
 
 
+
+
+
+
+
+
 age_range_order = ['16-18', '19-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90+']
 
 
-#histogram_plot_days(df_admissions_c, 'los_hours', out_dir)
-# smooth_histogram_plot(df_admissions_c, 'los_hours', out_dir)
 
+
+
+
+# smooth_histogram_plot(df_admissions_c, 'los_hours', out_dir)
+# histogram_plot_days(df_ref, 'los_hours', out_dir, num_bins=30)
 # box_whisker_plot(df_admissions_c, 'age_range', out_dir, order=age_range_order)
 # box_whisker_plot(df_admissions_c, 'GENDER', out_dir)
 # box_whisker_plot(df_admissions_c, 'religion_group', out_dir)
