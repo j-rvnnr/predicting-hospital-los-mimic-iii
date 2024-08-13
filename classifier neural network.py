@@ -156,13 +156,6 @@ def create_model(input_dim, learning_rate=learningrate, l1_reg=0.001, l2_reg=0.0
         metrics=['accuracy']
     )
 
-    # picture of model. THIS IS UGLY BUT IT WORKS AND TIME IS RUNNING OUT
-    plot_model(model,
-               to_file='classifier_image.png',
-               show_shapes=True,
-               show_layer_names=False,
-               rankdir='TB')
-
     return model
 def create_directory(directory):
     if not os.path.exists(directory):
