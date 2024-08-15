@@ -1,16 +1,12 @@
-import gc
 import time
 import os
-from itertools import cycle
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc,\
-    precision_recall_curve, average_precision_score
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -21,9 +17,6 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, PReLU
 from tensorflow.keras.callbacks import EarlyStopping, Callback
 from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras import Input
-from tensorflow.keras.optimizers import AdamW
-from ann_visualizer.visualize import ann_viz
-from tensorflow.keras.utils import plot_model
 
 ####################################################################################################
 #                                                                                                  #

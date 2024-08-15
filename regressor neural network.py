@@ -1,14 +1,11 @@
-import gc
 import time
 import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler, RobustScaler
-from sklearn.preprocessing import Normalizer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
