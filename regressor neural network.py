@@ -40,7 +40,7 @@ from boruta import BorutaPy
 
 # these variables are for data handling, whether we wish to include the longstay, only look at the longstay, and
 # whether we want to include categorical data.
-pred_class_list = [0, 1, 2]
+pred_class_list = [1]
 class_list_str = '_'.join(map(str, pred_class_list))
 
 consider_preds = 0 # this counts whether we consider the results of the classifier.
@@ -55,7 +55,7 @@ batchsize = 128
 testsize = 0.2
 
 # earlystopping parameters
-earlystopping_start = 200
+earlystopping_start = 300
 earlystopping_patience = 50
 
 # neural network parameters

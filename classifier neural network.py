@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc, \
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc,\
     precision_recall_curve, average_precision_score
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
@@ -530,7 +530,7 @@ except Exception as e:
 
 # binarize the output labels
 y_pred_prob = model.predict(X_test_preprocessed)
-y_test_bin = label_binarize(y_test, classes=[0, 1, 2])  # Assuming 3 classes (0, 1, 2)
+y_test_bin = label_binarize(y_test, classes=[0, 1, 2])  # assuming 3 classes (0, 1, 2)
 n_classes = y_test_bin.shape[1]
 
 #  ROC curve and ROC area for each class
