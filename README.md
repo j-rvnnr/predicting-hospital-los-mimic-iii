@@ -2,7 +2,10 @@
 The Length of stay (LOS) is a key metric within the healthcare system. The amount of time a patient stays in hospital affects hospital efficiency, patient outcomes and financial operations. In most hospitals, predicting LOS is key for smooth functioning of a hospital, with shorter stays often associated with improved patient flow and resource allocation, while extended hospital stays have the opposite effect.  The goal of this project was to develop a system using machine learning to accurately predict the length of a hospital stay using the MIMIC-III dataset. (A freely available dataset of hospital information)
 
 Globally, healthcare expenditure accounts for a significant portion of national GDP's, with the average being around 9.3% in OECD countries.
-![[Pasted image 20241015185743.png]]
+
+![Pasted image 20241015185743](https://github.com/user-attachments/assets/04b13197-0b5f-440e-8f78-c8242a25d608)
+
+
 While hospitals aim to improve the outcomes for patients, keeping costs down and efficiency up are other goals of the healthcare system. There is no single standard method to predict the length of stay of patients, with some hospitals using methods like taking the median across the hospital or care unit, and applying that across all patients, and some instead using a prediction made by a clinical team involved in each patient. Although these methods 'work', it is clear that there is room to improve. 
 
 My first step was looking into different methods of prediction which has been performed in the past. Methods used include Random Forests (Elbattah and Molloy, 2017) and deep neural networks (Bishop et al, 2021). Both of these methods are robust, but I wished to improve upon them in my work. 
