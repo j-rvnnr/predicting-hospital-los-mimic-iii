@@ -1,3 +1,5 @@
+This was my masters thesis project for my MSc of Data Science at University of Aberdeen, graduating winter of 2024. This write up is a highly condensed version of my thesis, structured in a more casual and article like way. It is made up from a combination of my notes from working on the project, and the thesis, although it is much shorter, and hopefully conveys the important points more concisely. 
+
 # Introduction
 The Length of stay (LOS) is a key metric within the healthcare system. The amount of time a patient stays in hospital affects hospital efficiency, patient outcomes and financial operations. In most hospitals, predicting LOS is key for smooth functioning of a hospital, with shorter stays often associated with improved patient flow and resource allocation, while extended hospital stays have the opposite effect.  The goal of this project was to develop a system using machine learning to accurately predict the length of a hospital stay using the MIMIC-III dataset. (A freely available dataset of hospital information)
 
